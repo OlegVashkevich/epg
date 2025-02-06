@@ -46,8 +46,6 @@ if (isset($argv[1])) {
                     }
                     break;
             }
-        } elseif ($reader->nodeType == XMLReader::END_ELEMENT && $reader->name == 'channel') {
-            continue; // Skip to the next channel
         }
     }
 

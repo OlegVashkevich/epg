@@ -24,9 +24,22 @@ type Programme struct {
 	Title   string `xml:"title"`
 }
 
+type epgData struct {
+	XMLName    xml.Name    `xml:"tv"`
+	Channels   []Channel   `xml:"channel"`
+	Programmes []Programme `xml:"programme"`
+}
+
 func main() {
 	var text string
 	var e error
+
+	epgData, err := prepare()
+	if err != nil {
+		fmt.Println("Ошибка при подготовке данных:", err)
+		return
+	}
+
 	// Бесконечный цикл для постоянного поиска
 	for e == nil {
 		reader := bufio.NewReader(os.Stdin)
@@ -35,43 +48,6 @@ func main() {
 		// Удаляем символы переноса строки
 		text = strings.Replace(text, "\r\n", "", -1)
 		searchWord := strings.ToLower(text)
-
-		filePath := "epg2.xml.gz"
-
-		// Проверяем наличие файла или его актуальность
-		if !fileExists(filePath) || fileLastModified(filePath) < time.Now().Add(-24*time.Hour).Unix() {
-			url := "http://epg.one/epg2.xml.gz"
-			// Загружаем файл с программой телевещания
-			downloadFile(url, filePath)
-		}
-
-		xmlReader, err := os.Open(filePath)
-		if err != nil {
-			fmt.Println("Error opening file:", err)
-			return
-		}
-		defer xmlReader.Close()
-
-		gzReader, err := gzip.NewReader(xmlReader)
-		if err != nil {
-			fmt.Println("Error creating gzip reader:", err)
-			return
-		}
-		defer gzReader.Close()
-
-		decoder := xml.NewDecoder(gzReader)
-
-		var epgData struct {
-			XMLName    xml.Name    `xml:"tv"`
-			Channels   []Channel   `xml:"channel"`
-			Programmes []Programme `xml:"programme"`
-		}
-
-		err = decoder.Decode(&epgData)
-		if err != nil {
-			fmt.Println("Error decoding XML:", err)
-			return
-		}
 
 		// Создаем словарь для хранения ID и отображений каналов
 		channels := make(map[string]string)
@@ -155,4 +131,41 @@ func downloadFile(url, filePath string) error {
 	}
 
 	return nil
+}
+
+func prepare() (epgData, error) {
+
+	epgData := new(epgData)
+
+	filePath := "epg2.xml.gz"
+
+	// Проверяем наличие файла или его актуальность
+	if !fileExists(filePath) || fileLastModified(filePath) < time.Now().Add(-24*time.Hour).Unix() {
+		url := "http://epg.one/epg2.xml.gz"
+		// Загружаем файл с программой телевещания
+		downloadFile(url, filePath)
+	}
+
+	xmlReader, err := os.Open(filePath)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return *epgData, err
+	}
+	defer xmlReader.Close()
+
+	gzReader, err := gzip.NewReader(xmlReader)
+	if err != nil {
+		fmt.Println("Error creating gzip reader:", err)
+		return *epgData, err
+	}
+	defer gzReader.Close()
+
+	decoder := xml.NewDecoder(gzReader)
+
+	err = decoder.Decode(&epgData)
+	if err != nil {
+		fmt.Println("Error decoding XML:", err)
+		return *epgData, err
+	}
+	return *epgData, nil
 }
