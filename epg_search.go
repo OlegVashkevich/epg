@@ -12,11 +12,23 @@ import (
 	"time"
 )
 
+type Channel struct {
+	ID          string `xml:"id,attr"`
+	DisplayName string `xml:"display-name"`
+}
+
+type Programme struct {
+	Start   string `xml:"start,attr"`
+	Stop    string `xml:"stop,attr"`
+	Channel string `xml:"channel,attr"`
+	Title   string `xml:"title"`
+}
+
 func main() {
 	var text string
 	var e error
 	// Бесконечный цикл для постоянного поиска
-	for ; e == nil; {
+	for e == nil {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Введите слово или точную фразу для поиска: ")
 		text, _ = reader.ReadString('\n')
@@ -24,7 +36,7 @@ func main() {
 		text = strings.Replace(text, "\r\n", "", -1)
 		searchWord := strings.ToLower(text)
 
-		filePath := "epg2.xml"
+		filePath := "epg2.xml.gz"
 
 		// Проверяем наличие файла или его актуальность
 		if !fileExists(filePath) || fileLastModified(filePath) < time.Now().Add(-24*time.Hour).Unix() {
@@ -33,21 +45,31 @@ func main() {
 			downloadFile(url, filePath)
 		}
 
-		xmlContent, err := readFile(filePath)
+		xmlReader, err := os.Open(filePath)
 		if err != nil {
-			fmt.Println("Error reading file:", err)
+			fmt.Println("Error opening file:", err)
 			return
 		}
+		defer xmlReader.Close()
 
-		// Структура для хранения данных программы телевещания
+		gzReader, err := gzip.NewReader(xmlReader)
+		if err != nil {
+			fmt.Println("Error creating gzip reader:", err)
+			return
+		}
+		defer gzReader.Close()
+
+		decoder := xml.NewDecoder(gzReader)
+
 		var epgData struct {
 			XMLName    xml.Name    `xml:"tv"`
 			Channels   []Channel   `xml:"channel"`
 			Programmes []Programme `xml:"programme"`
 		}
-		err = xml.Unmarshal(xmlContent, &epgData)
+
+		err = decoder.Decode(&epgData)
 		if err != nil {
-			fmt.Println("Error parsing XML:", err)
+			fmt.Println("Error decoding XML:", err)
 			return
 		}
 
@@ -66,7 +88,7 @@ func main() {
 			if strings.Contains(title, searchWord) {
 				start := programme.Start[:14]
 				end := programme.Stop[:14]
-	startTime, err := time.Parse(layout, start)
+				startTime, err := time.Parse(layout, start)
 				if err != nil {
 					fmt.Println("Error parsing start time:", err)
 					continue
@@ -84,7 +106,6 @@ func main() {
 				founds[displayName] = append(founds[displayName], fmt.Sprintf("%s - %s %s", startFormatted, endFormatted, programme.Title))
 			}
 		}
-
 
 		// Выводим результаты поиска
 		for key, value := range founds {
@@ -122,52 +143,16 @@ func downloadFile(url, filePath string) error {
 	}
 	defer resp.Body.Close()
 
-	gz, err := gzip.NewReader(resp.Body)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-
 	out, err := os.Create(filePath)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, gz)
+	_, err = io.Copy(out, resp.Body)
 	if err != nil {
 		return err
 	}
 
 	return nil
-}
-
-// Функция для чтения файла
-func readFile(filename string) ([]byte, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var buf []byte
-	buf, err = io.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
-
-	return buf, nil
-}
-
-
-type Channel struct {
-	ID          string `xml:"id,attr"`
-	DisplayName string `xml:"display-name"`
-}
-
-type Programme struct {
-	Start   string `xml:"start,attr"`
-	Stop    string `xml:"stop,attr"`
-	Channel string `xml:"channel,attr"`
-	Title   string `xml:"title"`
 }
